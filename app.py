@@ -1,31 +1,39 @@
 import streamlit as st
-from deep_translator import GoogleTranslator, MyMemoryTranslator
 import difflib
 import random
 import time
 from fpdf import FPDF
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
-st.set_page_config(page_title="EduTyping Pro v3.1", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="EduTyping Pro v3.2", page_icon="🎓", layout="wide")
 
-# --- FUNÇÕES DE LÓGICA ---
+# --- BANCO DE DADOS LOCAL (GABARITO OFICIAL) ---
+# Isso evita o erro de "IP address not allowed"
+BANCO_DADOS = {
+    "🌱 Iniciante": [
+        {"pt": "O céu é azul.", "en": "The sky is blue.", "es": "El cielo es azul."},
+        {"pt": "Eu gosto de maçã.", "en": "I like apple.", "es": "Me gusta la manzana."},
+        {"pt": "Bom dia para todos.", "en": "Good morning to everyone.", "es": "Buenos días a todos."},
+        {"pt": "O gato dorme.", "en": "The cat sleeps.", "es": "El gato duerme."}
+    ],
+    "🚀 Intermediário": [
+        {"pt": "A biblioteca é um lugar calmo.", "en": "The library is a quiet place.", "es": "La biblioteca es un lugar tranquilo."},
+        {"pt": "Nós aprendemos Python na escola.", "en": "We learn Python at school.", "es": "Aprendemos Python en la escuela."},
+        {"pt": "A tecnologia ajuda as pessoas.", "en": "Technology helps people.", "es": "La tecnología ayuda a las personas."}
+    ],
+    "🏆 Avançado": [
+        {"pt": "A prática leva à perfeição.", "en": "Practice leads to perfection.", "es": "La práctica lleva a la perfección."},
+        {"pt": "A educação transforma vidas.", "en": "Education transforms lives.", "es": "La educación transforma vidas."},
+        {"pt": "O conhecimento é poder.", "en": "Knowledge is power.", "es": "El conocimiento es poder."}
+    ]
+}
 
-def traduzir_texto(texto, destino='en'):
-    """Tenta traduzir usando Google, se falhar por IP, tenta MyMemory (Grátis)"""
-    try:
-        # Tentativa 1: Google
-        return GoogleTranslator(source='auto', target=destino).translate(texto)
-    except Exception:
-        try:
-            # Tentativa 2: MyMemory (Reserva para erro de IP)
-            return MyMemoryTranslator(source='pt-BR', target=destino).translate(texto)
-        except:
-            return "Erro: O servidor de tradução bloqueou o acesso temporariamente."
+# --- FUNÇÕES DE APOIO ---
 
 def analisar_erros(tentativa, correto):
     resultado_visual = []
     erros_digitacao = 0
-    for s in difflib.ndiff(tentativa, correto):
+    for s in difflib.ndiff(tentativa.lower().strip(), correto.lower().strip()):
         if s[0] == ' ': 
             resultado_visual.append(s[-1])
         elif s[0] == '-': 
@@ -40,108 +48,76 @@ def tocar_som_sucesso():
     audio_url = "https://www.soundjay.com/buttons/sounds/button-09.mp3"
     st.markdown(f'<audio autoplay><source src="{audio_url}" type="audio/mp3"></audio>', unsafe_allow_html=True)
 
-def gerar_pdf(nome, pontos, wpm, precisao, erros_acumulados):
+def gerar_pdf(nome, pontos, wpm, precisao, erros):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 20)
-    pdf.set_text_color(33, 150, 243) 
-    pdf.cell(0, 20, "RELATÓRIO DE DESEMPENHO", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 10, "Plataforma EduTyping Pro", ln=True, align='C')
+    pdf.cell(0, 20, "RELATÓRIO DE DESEMPENHO - EDUTYPING", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f"Aluno(a): {nome}", ln=True)
-    pdf.cell(0, 10, f"Data: {time.strftime('%d/%m/%Y %H:%M')}", ln=True)
-    pdf.line(10, pdf.get_y() + 2, 200, pdf.get_y() + 2)
-    pdf.ln(15)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Métricas da Sessão:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f"- Pontuação Acumulada: {pontos} pontos", ln=True)
-    pdf.cell(0, 10, f"- Velocidade Máxima: {wpm} WPM", ln=True)
-    pdf.cell(0, 10, f"- Precisão Média: {precisao}%", ln=True)
-    pdf.cell(0, 10, f"- Total de Erros Detectados: {erros_acumulados}", ln=True)
-    pdf.ln(40)
-    pdf.set_font("Arial", 'I', 9)
-    pdf.cell(0, 10, "Documento gerado automaticamente pelo Sistema EduTyping Pro.", align='C')
+    pdf.cell(0, 10, f"Aluno: {nome}", ln=True)
+    pdf.cell(0, 10, f"Pontos: {pontos} | Velocidade: {wpm} WPM | Precisão: {precisao}%", ln=True)
+    pdf.cell(0, 10, f"Total de Erros: {erros}", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- BANCO DE FRASES ---
-BANCO = {
-    "🌱 Iniciante": ["O céu é azul.", "Eu gosto de maçã.", "Bom dia para todos.", "O gato dorme."],
-    "🚀 Intermediário": ["A biblioteca é um lugar calmo.", "Nós aprendemos Python na escola.", "A tecnologia ajuda as pessoas."],
-    "🏆 Avançado": ["A prática constante leva à perfeição técnica.", "Traduzir requer entender o contexto cultural.", "A educação transforma vidas e sociedades."]
-}
-
-# --- INICIALIZAÇÃO ---
+# --- INICIALIZAÇÃO DO ESTADO ---
 if 'pontos' not in st.session_state: st.session_state.pontos = 0
 if 'erros_totais' not in st.session_state: st.session_state.erros_totais = 0
-if 'wpm_maximo' not in st.session_state: st.session_state.wpm_maximo = 0
-if 'ultima_precisao' not in st.session_state: st.session_state.ultima_precisao = 0
-if 'frase_atual' not in st.session_state: 
-    st.session_state.frase_atual = random.choice(BANCO["🌱 Iniciante"])
+if 'wpm_max' not in st.session_state: st.session_state.wpm_max = 0
+if 'item_atual' not in st.session_state:
+    st.session_state.item_atual = random.choice(BANCO_DADOS["🌱 Iniciante"])
     st.session_state.tempo_inicio = time.time()
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🎓 Área do Aluno")
-    st.metric("Sua Pontuação", f"{st.session_state.pontos} pts")
-    nivel_escolhido = st.select_slider("Dificuldade:", options=list(BANCO.keys()))
-    idioma_nome = st.selectbox("Idioma do Treino:", ["Inglês (en)", "Espanhol (es)", "Francês (fr)"])
-    sigla = idioma_nome.split('(')[1].replace(')', '')
-    if st.button("🔄 Próxima Frase / Reset"):
-        st.session_state.frase_atual = random.choice(BANCO[nivel_escolhido])
+    st.title("🎓 Painel do Aluno")
+    st.metric("Pontuação", f"{st.session_state.pontos}")
+    nivel = st.select_slider("Nível:", options=list(BANCO_DADOS.keys()))
+    idioma_alvo = st.radio("Idioma Alvo:", ["Inglês (en)", "Espanhol (es)"])
+    lang_key = 'en' if "Inglês" in idioma_alvo else 'es'
+    
+    if st.button("🔄 Nova Frase"):
+        st.session_state.item_atual = random.choice(BANCO_DADOS[nivel])
         st.session_state.tempo_inicio = time.time()
         st.rerun()
 
-# --- INTERFACE PRINCIPAL ---
+# --- INTERFACE ---
 st.title("⌨️ EduTyping Pro")
-st.markdown("---")
+st.info(f"### TRADUZA: \n **{st.session_state.item_atual['pt']}**")
 
-col_desafio, col_stats = st.columns([2, 1])
-
-with col_desafio:
-    st.subheader("Desafio de Escrita")
-    st.info(f"**Traduza:** {st.session_state.frase_atual}")
-    tentativa = st.text_input("Digite sua tradução e tecle ENTER:", placeholder="Escreva aqui...")
-
-with col_stats:
-    st.subheader("Métricas")
-    if tentativa:
-        correto = traduzir_texto(st.session_state.frase_atual, destino=sigla)
-        visual_diff, erros_na_frase = analisar_erros(tentativa, correto)
-        tempo_total = time.time() - st.session_state.tempo_inicio
-        wpm = int((len(tentativa.split()) / (tempo_total/60))) if tempo_total > 0 else 0
-        match = difflib.SequenceMatcher(None, tentativa.lower().strip(), correto.lower().strip())
-        precisao = int(match.ratio() * 100)
-        st.session_state.ultima_precisao = precisao
-        st.session_state.erros_totais += erros_na_frase
-        if wpm > st.session_state.wpm_maximo: st.session_state.wpm_maximo = wpm
-        st.metric("Velocidade", f"{wpm} WPM")
-        st.metric("Precisão", f"{precisao}%")
-        st.progress(precisao / 100)
+tentativa = st.text_input("Sua resposta (Tecle Enter):", key="input_final")
 
 if tentativa:
-    st.divider()
+    correto = st.session_state.item_atual[lang_key]
+    visual, erros = analisar_erros(tentativa, correto)
+    
+    tempo = time.time() - st.session_state.tempo_inicio
+    wpm = int((len(tentativa.split()) / (tempo/60))) if tempo > 0 else 0
+    precisao = int(difflib.SequenceMatcher(None, tentativa.lower(), correto.lower()).ratio() * 100)
+    
+    st.session_state.erros_totais += erros
+    if wpm > st.session_state.wpm_max: st.session_state.wpm_max = wpm
+
+    c1, c2 = st.columns(2)
+    c1.metric("Precisão", f"{precisao}%")
+    c2.metric("Velocidade", f"{wpm} WPM")
+    
     if precisao == 100:
         st.balloons()
         tocar_som_sucesso()
-        st.success("🏆 **Incrível! Tradução 100% correta.**")
-        if st.button("Coletar Pontos (+20)"):
-            st.session_state.pontos += 20
-            st.session_state.frase_atual = random.choice(BANCO[nivel_escolhido])
+        st.success("✅ Excelente!")
+        if st.button("Coletar +10 Pontos"):
+            st.session_state.pontos += 10
+            st.session_state.item_atual = random.choice(BANCO_DADOS[nivel])
             st.session_state.tempo_inicio = time.time()
             st.rerun()
     else:
-        st.error(f"Detectamos {erros_na_frase} erro(s):")
-        st.markdown(f"### {visual_diff}")
-        st.info(f"Dica (Oficial): {correto}")
+        st.markdown(f"**Análise de erros:** {visual}")
+        st.write(f"Tradução correta: *{correto}*")
 
-st.markdown("---")
-with st.expander("📄 Gerar Relatório para o Professor"):
-    nome_pdf = st.text_input("Seu Nome Completo:")
-    if st.button("Criar PDF Oficial"):
-        if nome_pdf:
-            pdf_bytes = gerar_pdf(nome_pdf, st.session_state.pontos, st.session_state.wpm_maximo, st.session_state.ultima_precisao, st.session_state.erros_totais)
-            st.download_button("📥 Baixar PDF", pdf_bytes, f"Certificado_{nome_pdf}.pdf", "application/pdf")
+# --- RELATÓRIO ---
+with st.expander("📄 Gerar Relatório"):
+    nome = st.text_input("Nome do Aluno:")
+    if st.button("Baixar PDF"):
+        pdf = gerar_pdf(nome, st.session_state.pontos, st.session_state.wpm_max, precisao, st.session_state.erros_totais)
+        st.download_button("Clique aqui para baixar", pdf, "relatorio.pdf", "application/pdf")
