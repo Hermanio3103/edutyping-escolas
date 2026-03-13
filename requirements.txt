@@ -1,2 +1,2 @@
-deep-translator
+streamlit
 fpdf
